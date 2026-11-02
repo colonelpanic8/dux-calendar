@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/duxlabs-dev/dux-calendar/core/internal/calendar"
@@ -133,17 +134,24 @@ func (p *Provider) ListCalendars(ctx context.Context) ([]calendar.Calendar, erro
 	if err := p.call(ctx, "calendars.list", struct{}{}, &res); err != nil {
 		return nil, err
 	}
+	res.Calendars = slices.DeleteFunc(res.Calendars, func(c calendar.Calendar) bool { return c.RemoteID == "" })
 	for i := range res.Calendars {
 		res.Calendars[i].AccountID = p.account.ID
-		writable := p.caps.Events.Write
-		if res.Calendars[i].HoldsTasks() {
-			writable = p.caps.Tasks.Write
-		}
-		if !writable {
+		if !p.writable(res.Calendars[i]) {
 			res.Calendars[i].ReadOnly = true
 		}
 	}
 	return res.Calendars, nil
+}
+
+// writable reports whether the plugin can write any component the calendar
+// holds; write methods still reject components whose capability is off.
+func (p *Provider) writable(cal calendar.Calendar) bool {
+	if !cal.HoldsTasks() {
+		return p.caps.Events.Write
+	}
+	holdsEvents := slices.Contains(cal.SupportedComponents, calendar.ComponentVEvent)
+	return p.caps.Tasks.Write || (holdsEvents && p.caps.Events.Write)
 }
 
 func (p *Provider) Sync(ctx context.Context, cal calendar.Calendar, cursor calendar.SyncCursor) (*calendar.SyncResult, error) {
@@ -156,7 +164,7 @@ func (p *Provider) Sync(ctx context.Context, cal calendar.Calendar, cursor calen
 	changes := res.Changes[:0]
 	for _, ch := range res.Changes {
 		if ch.Type == calendar.ChangeUpsert {
-			if ch.Event == nil {
+			if ch.Event == nil || ch.Event.UID == "" {
 				continue
 			}
 			ch.Event.CalendarID = cal.ID
@@ -166,7 +174,7 @@ func (p *Provider) Sync(ctx context.Context, cal calendar.Calendar, cursor calen
 	taskChanges := res.TaskChanges[:0]
 	for _, ch := range res.TaskChanges {
 		if ch.Type == calendar.ChangeUpsert {
-			if ch.Task == nil {
+			if ch.Task == nil || ch.Task.UID == "" {
 				continue
 			}
 			ch.Task.CalendarID = cal.ID

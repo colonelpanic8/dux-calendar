@@ -44,7 +44,7 @@ it.
 
 dcal starts the command whenever it needs the provider (each sync pass and
 each write) and closes its stdin when done. The provider should exit on EOF;
-it is killed two seconds later. Messages are JSON-RPC 2.0, one JSON object
+otherwise it is killed two seconds later. Messages are JSON-RPC 2.0, one JSON object
 per line on stdin and stdout. Anything written to stderr goes to the daemon
 log. Messages without an `id` are ignored. Each call times out after 60
 seconds by default.
@@ -63,15 +63,49 @@ Payloads use dcal's own JSON shapes for calendars, events and tasks (see
 | `tasks.create`, `tasks.update` | `{calendar, task}` | `{task}` |
 | `tasks.delete` | `{calendar, task}` | `null` |
 
+### Field rules
+
+- Omitted and `null` fields both mean the zero value (empty string, `false`,
+  zero time). dcal sets `accountId` on calendars and `calendarId` on events
+  and tasks itself, so providers can leave them out.
+- Required fields: `remoteId` and `name` on calendars; `uid`, `summary`,
+  `start` and `end` on events; `uid` and `summary` on tasks. An `upsert`
+  change without its `event` or `task` is ignored.
 - Calendars are matched across syncs by `remoteId`. Set
   `supportedComponents: ["VTODO"]` for task lists.
-- Events and tasks are matched by `uid`. A simple provider can return every
-  item each time with `fullSnapshot: true`. dcal then removes items that are
-  missing. `token` is passed back on the next sync, so incremental providers
-  can return only what changed.
-- A calendar is read-only unless the capability for its component type has
-  `write: true`. Write methods are only called when that capability is set.
+- Events and tasks are matched by `uid`. Use an identifier that survives
+  edits on the provider side.
+- `allDay` items use UTC midnight of their date. Timed items are RFC 3339
+  instants with an offset; set `startTimeZone`, `endTimeZone` or
+  `dueTimeZone` to an IANA name when the source has one.
+
+### Sync
+
+- `token` is passed back on the next sync, so incremental providers can
+  return only what changed. A simple provider can return every item each time
+  with `fullSnapshot: true` and ignore the token.
+- A full snapshot may span several responses: return `more: true` and dcal
+  calls `calendar.sync` again with the new token. Items are pruned only after
+  the last page, and nothing is pruned if any page fails. Because a full
+  snapshot is authoritative, return an error rather than an empty list when
+  the source fails or answers with unexpected data.
+
+### Writes
+
+- A calendar is writable when the plugin can write at least one component
+  type it holds. Write methods are only called for components whose
+  capability has `write: true`.
+- Write results are stored as returned, so return the item as the source now
+  has it (for example, a repeating task that moved to its next date).
+- dcal does not retry failed writes. A provider that cannot tell whether a
+  write landed should return an error; the next sync shows the real state.
+
+### Errors
+
 - Return error code `-32001` when credentials are rejected. dcal then marks
-  the account as needing re-authorization.
+  the account as needing re-authorization. Other failures can use any code.
 - `notices` are the soft sync warnings defined in
   `core/internal/calendar/provider.go`, such as `items_skipped`.
+- Each call has a timeout (60 seconds by default). A provider that times out,
+  stops reading, or closes its output is killed together with its process
+  group, so helper processes it started are stopped too.

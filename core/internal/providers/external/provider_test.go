@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -47,6 +48,13 @@ func runFakePlugin(mode string) {
 			_ = out.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": code, "message": msg}})
 		}
 
+		if mode == "orphan" && req.Method == "initialize" {
+			// A descendant that keeps stdout open must not wedge Close.
+			child := exec.Command("sleep", "3600")
+			child.Stdout = os.Stdout
+			_ = child.Start()
+		}
+
 		switch {
 		case req.Method == "initialize" && mode == "reauth":
 			fail(errCodeReauth, "bad password")
@@ -57,10 +65,22 @@ func runFakePlugin(mode string) {
 			})
 		case mode == "crash":
 			os.Exit(3)
+		case mode == "hang":
+			select {}
+		case mode == "close-stdout":
+			_ = os.Stdout.Close()
+			select {}
+		case mode == "spam":
+			for {
+				if err := out.Encode(map[string]any{"jsonrpc": "2.0", "id": -1, "result": nil}); err != nil {
+					select {}
+				}
+			}
 		case req.Method == "calendars.list":
 			reply(map[string]any{"calendars": []map[string]any{
 				{"remoteId": "events", "name": "Schedule"},
 				{"remoteId": "tasks", "name": "Tasks", "supportedComponents": []string{"VTODO"}},
+				{"name": "No remote id"},
 			}})
 		case req.Method == "calendar.sync":
 			reply(map[string]any{
@@ -69,6 +89,7 @@ func runFakePlugin(mode string) {
 				"changes": []map[string]any{
 					{"type": "upsert", "event": map[string]any{"uid": "e1", "summary": "Standup", "start": "2026-11-02T09:00:00Z", "end": "2026-11-02T09:15:00Z"}},
 					{"type": "upsert"},
+					{"type": "upsert", "event": map[string]any{"summary": "no uid"}},
 				},
 				"retryAfterSeconds": 30,
 				"notices":           []string{"items_skipped"},
@@ -123,7 +144,7 @@ func TestRoundTrip(t *testing.T) {
 	assert.Equal(t, calendar.SyncCursor{CalendarID: "cal-1", Token: "t1"}, res.Cursor)
 	assert.True(t, res.FullSnapshot)
 	assert.Equal(t, 30*time.Second, res.RetryAfter)
-	require.Len(t, res.Changes, 1, "upserts without an event are dropped")
+	require.Len(t, res.Changes, 1, "upserts without an event or uid are dropped")
 	assert.Equal(t, "cal-1", res.Changes[0].Event.CalendarID)
 	assert.Equal(t, []string{"items_skipped"}, p.(calendar.NoticeReporter).Notices())
 
@@ -148,4 +169,28 @@ func TestPluginExitFailsCall(t *testing.T) {
 	require.NoError(t, err)
 	_, err = p.ListCalendars(context.Background())
 	assert.ErrorContains(t, err, "exited")
+}
+
+func TestStuckProvidersAreBounded(t *testing.T) {
+	for _, mode := range []string{"hang", "close-stdout", "spam"} {
+		t.Run(mode, func(t *testing.T) {
+			p, err := startFake(t, mode)
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			start := time.Now()
+			_, err = p.ListCalendars(ctx)
+			assert.Error(t, err)
+			require.NoError(t, p.Close())
+			assert.Less(t, time.Since(start), 2*closeGrace+time.Second)
+		})
+	}
+}
+
+func TestCloseKillsDescendantsHoldingPipes(t *testing.T) {
+	p, err := startFake(t, "orphan")
+	require.NoError(t, err)
+	start := time.Now()
+	require.NoError(t, p.Close())
+	assert.Less(t, time.Since(start), 2*closeGrace+time.Second)
 }
