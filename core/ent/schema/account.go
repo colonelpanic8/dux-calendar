@@ -22,7 +22,7 @@ func (Account) Fields() []ent.Field {
 			Unique().
 			Immutable(),
 		field.Enum("kind").
-			Values("local", "google", "caldav", "microsoft", "ical", "evolution").
+			Values("local", "google", "caldav", "microsoft", "ical", "evolution", "external").
 			Immutable(),
 		field.String("display_name").
 			NotEmpty(),

@@ -19,6 +19,7 @@ import (
 	calendar_handler "github.com/duxlabs-dev/dux-calendar/core/api/calendar"
 	"github.com/duxlabs-dev/dux-calendar/core/api/server"
 	"github.com/duxlabs-dev/dux-calendar/core/config"
+	"github.com/duxlabs-dev/dux-calendar/core/internal/accounts"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/calendar"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/colorscheme"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/invitations"
@@ -27,12 +28,6 @@ import (
 	"github.com/duxlabs-dev/dux-calendar/core/internal/notify"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/oauth"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/paths"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/caldav"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/evolution"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/google"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/ical"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/local"
-	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/microsoft"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/reminders"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/rsvp"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/settings"
@@ -125,14 +120,11 @@ func bootDaemonServices(ctx context.Context) (*daemonServices, error) {
 		return nil, err
 	}
 	r := repo.New(client)
+	if err := accounts.ReconcileExternalManifest(ctx, r); err != nil {
+		log.Warnf("external accounts manifest: %v", err)
+	}
 
-	registry := calendar.NewRegistry()
-	registry.Register(local.Factory{})
-	registry.Register(google.Factory{})
-	registry.Register(caldav.Factory{})
-	registry.Register(microsoft.Factory{})
-	registry.Register(ical.Factory{})
-	registry.Register(evolution.Factory{})
+	registry := providerRegistry()
 
 	keyringStore := dankkeyring.Open()
 	migrateLegacyLoginKeyring(ctx, keyringStore, r)

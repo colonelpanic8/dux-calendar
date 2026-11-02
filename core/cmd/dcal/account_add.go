@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ import (
 
 var accountAddCmd = &cobra.Command{
 	Use:   "add",
-	Short: "Add a calendar account (google, microsoft, caldav, icloud, ical, evolution, local)",
+	Short: "Add a calendar account (google, microsoft, caldav, icloud, ical, evolution, local, external)",
 }
 
 var accountAddLocalCmd = &cobra.Command{
@@ -270,6 +271,43 @@ var accountAddMicrosoftCmd = &cobra.Command{
 	},
 }
 
+var accountAddExternalCmd = &cobra.Command{
+	Use:   "external <name> -- <command> [args...]",
+	Short: "Add a calendar backed by an external provider program",
+	Long:  "Run <command> as a provider plugin speaking the dcal external provider protocol (JSON-RPC over stdio). Re-running with the same name updates the account.",
+	Args:  cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name, _ := cmd.Flags().GetString("name")
+		envPairs, _ := cmd.Flags().GetStringArray("env")
+		env := make(map[string]string, len(envPairs))
+		for _, pair := range envPairs {
+			k, v, ok := strings.Cut(pair, "=")
+			if !ok || k == "" {
+				return fmt.Errorf("--env %q: expected KEY=VALUE", pair)
+			}
+			env[k] = v
+		}
+
+		ctx := context.Background()
+		st, closer, err := openStores(ctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		res, err := accounts.AddExternal(ctx, st.repo, accounts.ExternalInput{
+			Name:        args[0],
+			DisplayName: name,
+			Command:     args[1:],
+			Env:         env,
+		})
+		if err != nil {
+			return err
+		}
+		return finishAdd(ctx, st, res)
+	},
+}
+
 func init() {
 	accountAddLocalCmd.Flags().String("name", "", "Display name (defaults to the directory name)")
 
@@ -287,6 +325,9 @@ func init() {
 
 	accountAddEvolutionCmd.Flags().String("name", "", "Display name (defaults to \"Evolution\")")
 
+	accountAddExternalCmd.Flags().String("name", "", "Display name (defaults to the account name)")
+	accountAddExternalCmd.Flags().StringArray("env", nil, "KEY=VALUE environment for the provider (repeatable)")
+
 	accountAddGoogleCmd.Flags().String("client-id", "", "OAuth client ID")
 	accountAddGoogleCmd.Flags().String("client-secret", "", "OAuth client secret")
 	accountAddGoogleCmd.Flags().String("credentials", "", "Path to the client_secret_….json downloaded from Google")
@@ -301,6 +342,7 @@ func init() {
 	accountAddCmd.AddCommand(accountAddEvolutionCmd)
 	accountAddCmd.AddCommand(accountAddGoogleCmd)
 	accountAddCmd.AddCommand(accountAddMicrosoftCmd)
+	accountAddCmd.AddCommand(accountAddExternalCmd)
 }
 
 func resolveGoogleCreds(cmd *cobra.Command) (oauth.GoogleAppCredentials, error) {

@@ -225,3 +225,35 @@ func (s *AccountsSuite) TestDeleteRemovesAccountAndSecrets() {
 	_, err = secrets.Get(s.ctx, "g", google.SecretKeyToken)
 	s.Error(err)
 }
+
+func (s *AccountsSuite) TestReconcileExternalTracksManifest() {
+	manual, err := accounts.AddExternal(s.ctx, s.repo, accounts.ExternalInput{Name: "manual", Command: []string{"/bin/manual"}})
+	s.Require().NoError(err)
+
+	org := accounts.ExternalInput{Name: "org", DisplayName: "Org", Command: []string{"/bin/org", "--v1"}, Env: map[string]string{"A": "1"}}
+	s.Require().NoError(accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{org}))
+
+	acc, err := s.repo.GetAccount(s.ctx, "external:org")
+	s.Require().NoError(err)
+	s.Equal(account.KindExternal, acc.Kind)
+	s.Equal([]any{"/bin/org", "--v1"}, acc.Settings["command"])
+
+	org.Command = []string{"/bin/org", "--v2"}
+	org.DisplayName = "Org agenda"
+	s.Require().NoError(accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{org}))
+	acc, err = s.repo.GetAccount(s.ctx, "external:org")
+	s.Require().NoError(err)
+	s.Equal("Org agenda", acc.DisplayName)
+	s.Equal([]any{"/bin/org", "--v2"}, acc.Settings["command"])
+
+	s.Require().NoError(accounts.ReconcileExternal(s.ctx, s.repo, nil))
+	_, err = s.repo.GetAccount(s.ctx, "external:org")
+	s.True(repo.IsNotFound(err), "undeclared managed account should be removed")
+	_, err = s.repo.GetAccount(s.ctx, manual.AccountID)
+	s.NoError(err, "accounts added by hand are not managed")
+}
+
+func (s *AccountsSuite) TestReconcileExternalRejectsBadNames() {
+	err := accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{{Name: "bad/name", Command: []string{"x"}}})
+	s.Error(err)
+}

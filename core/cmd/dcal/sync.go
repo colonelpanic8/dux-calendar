@@ -10,6 +10,7 @@ import (
 	"github.com/duxlabs-dev/dux-calendar/core/internal/calendar"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/caldav"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/evolution"
+	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/external"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/google"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/ical"
 	"github.com/duxlabs-dev/dux-calendar/core/internal/providers/local"
@@ -84,6 +85,7 @@ func providerRegistry() *calendar.Registry {
 	registry.Register(microsoft.Factory{})
 	registry.Register(ical.Factory{})
 	registry.Register(evolution.Factory{})
+	registry.Register(external.Factory{})
 	return registry
 }
 

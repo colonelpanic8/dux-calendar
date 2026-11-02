@@ -14,6 +14,7 @@ const (
 	AccountMicrosoft AccountKind = "microsoft"
 	AccountICal      AccountKind = "ical"
 	AccountEvolution AccountKind = "evolution"
+	AccountExternal  AccountKind = "external"
 )
 
 type Account struct {
