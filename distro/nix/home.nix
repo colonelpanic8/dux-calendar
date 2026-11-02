@@ -7,6 +7,12 @@
 let
   cfg = config.programs.dank-calendar;
   jsonFormat = pkgs.formats.json { };
+  externalAccountsFile = jsonFormat.generate "external-accounts.json" {
+    accounts = lib.mapAttrsToList (name: acc: {
+      inherit name;
+      inherit (acc) displayName command env;
+    }) cfg.externalAccounts;
+  };
 in
 {
   imports = [ (import ./options.nix args) ];
@@ -25,6 +31,34 @@ in
     '';
   };
 
+  options.programs.dank-calendar.externalAccounts = lib.mkOption {
+    type = lib.types.attrsOf (
+      lib.types.submodule (
+        { name, ... }:
+        {
+          options = {
+            displayName = lib.mkOption {
+              type = lib.types.str;
+              default = name;
+              description = "Account name shown in the UI.";
+            };
+            command = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              description = "Provider program and arguments (see docs/external-providers.md).";
+            };
+            env = lib.mkOption {
+              type = lib.types.attrsOf lib.types.str;
+              default = { };
+              description = "Extra environment for the provider. Do not put secrets here; pass secret file paths instead.";
+            };
+          };
+        }
+      )
+    );
+    default = { };
+    description = "External provider accounts managed declaratively; the daemon adds, updates, and removes them to match.";
+  };
+
   config = lib.mkIf cfg.enable {
     programs.dank-calendar.systemd.target = lib.mkDefault config.wayland.systemd.target;
 
@@ -38,6 +72,7 @@ in
         Description = "Dux Calendar";
         PartOf = [ cfg.systemd.target ];
         After = [ cfg.systemd.target ];
+        X-Restart-Triggers = lib.mkIf (cfg.externalAccounts != { }) [ externalAccountsFile ];
         # With RestartSec=2 the default limit (5 starts per 10s) is never reached, so a persistent failure would restart forever.
         StartLimitIntervalSec = "60";
         StartLimitBurst = "5";
@@ -51,6 +86,10 @@ in
       };
 
       Install.WantedBy = [ cfg.systemd.target ];
+    };
+
+    xdg.configFile."dankcal/external-accounts.json" = lib.mkIf (cfg.externalAccounts != { }) {
+      source = externalAccountsFile;
     };
 
     xdg.configFile."dankcal/ui-settings.json" = lib.mkIf (cfg.settings != { }) {
