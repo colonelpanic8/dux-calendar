@@ -35,6 +35,7 @@ var accountAddLocalCmd = &cobra.Command{
 			return err
 		}
 		name, _ := cmd.Flags().GetString("name")
+		readOnly, _ := cmd.Flags().GetBool("read-only")
 
 		ctx := context.Background()
 		st, closer, err := openStores(ctx)
@@ -43,7 +44,7 @@ var accountAddLocalCmd = &cobra.Command{
 		}
 		defer closer()
 
-		res, err := accounts.AddLocal(ctx, st.repo, accounts.LocalInput{Root: root, DisplayName: name})
+		res, err := accounts.AddLocal(ctx, st.repo, accounts.LocalInput{Root: root, DisplayName: name, ReadOnly: readOnly})
 		if err != nil {
 			return err
 		}
@@ -310,6 +311,7 @@ var accountAddExternalCmd = &cobra.Command{
 
 func init() {
 	accountAddLocalCmd.Flags().String("name", "", "Display name (defaults to the directory name)")
+	accountAddLocalCmd.Flags().Bool("read-only", false, "Never write to the directory (for trees synced by another tool, e.g. vdirsyncer)")
 
 	for _, c := range []*cobra.Command{accountAddCalDAVCmd, accountAddICloudCmd} {
 		c.Flags().String("username", "", "Username")

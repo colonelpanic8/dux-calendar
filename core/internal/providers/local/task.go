@@ -77,6 +77,9 @@ func (p *Provider) readTaskFile(cal calendar.Calendar, path string) ([]calendar.
 }
 
 func (p *Provider) CreateTask(ctx context.Context, cal calendar.Calendar, t *calendar.Task) (*calendar.Task, error) {
+	if p.readOnly {
+		return nil, errReadOnly
+	}
 	source, err := p.calendarPath(cal)
 	if err != nil {
 		return nil, err
@@ -100,6 +103,9 @@ func (p *Provider) CreateTask(ctx context.Context, cal calendar.Calendar, t *cal
 }
 
 func (p *Provider) UpdateTask(ctx context.Context, cal calendar.Calendar, t *calendar.Task) (*calendar.Task, error) {
+	if p.readOnly {
+		return nil, errReadOnly
+	}
 	if t.UID == "" {
 		return nil, fmt.Errorf("task missing UID")
 	}
@@ -130,6 +136,9 @@ func (p *Provider) UpdateTask(ctx context.Context, cal calendar.Calendar, t *cal
 }
 
 func (p *Provider) DeleteTask(ctx context.Context, cal calendar.Calendar, t calendar.Task) error {
+	if p.readOnly {
+		return errReadOnly
+	}
 	if t.UID == "" {
 		return fmt.Errorf("task missing UID")
 	}

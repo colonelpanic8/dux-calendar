@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -180,6 +181,9 @@ func icalAccountID(ctx context.Context, r *repo.Repo, feedURL string, parsed *ur
 type LocalInput struct {
 	Root        string
 	DisplayName string
+	// ReadOnly is for trees owned by another tool, such as a vdirsyncer
+	// mirror. Nothing is written to them, including the seeded calendar.
+	ReadOnly bool
 }
 
 func AddLocal(ctx context.Context, r *repo.Repo, in LocalInput) (Result, error) {
@@ -199,8 +203,31 @@ func AddLocal(ctx context.Context, r *repo.Repo, in LocalInput) (Result, error) 
 	}
 
 	settings := map[string]any{"root": root}
+	if in.ReadOnly {
+		settings[local.SettingReadOnly] = true
+	}
 	if err := Ensure(ctx, r, accountID, account.KindLocal, displayName, settings); err != nil {
 		return Result{}, err
+	}
+	// Re-adding an existing account applies a changed read-only flag.
+	if acc, err := r.GetAccount(ctx, accountID); err != nil {
+		return Result{}, err
+	} else if local.ReadOnly(acc.Settings) != in.ReadOnly {
+		merged := maps.Clone(acc.Settings)
+		if merged == nil {
+			merged = map[string]any{}
+		}
+		if in.ReadOnly {
+			merged[local.SettingReadOnly] = true
+		} else {
+			delete(merged, local.SettingReadOnly)
+		}
+		if _, err := r.UpdateAccount(ctx, accountID, repo.UpdateAccountInput{Settings: merged}); err != nil {
+			return Result{}, err
+		}
+	}
+	if in.ReadOnly {
+		return Result{AccountID: accountID, DisplayName: displayName}, nil
 	}
 	if err := local.SeedDefaultCalendar(root, ""); err != nil {
 		return Result{}, fmt.Errorf("seed default calendar: %w", err)

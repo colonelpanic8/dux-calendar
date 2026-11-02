@@ -245,3 +245,34 @@ func TestAllDayAndRecurrenceRoundtrip(t *testing.T) {
 	require.Equal(t, "2026-07-01", got.Start.Format("2006-01-02"))
 	require.Equal(t, "2026-07-08", got.End.Format("2006-01-02"))
 }
+
+func TestReadOnlyAccountNeverWrites(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "primary")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	path := filepath.Join(dir, "multi.ics")
+	require.NoError(t, os.WriteFile(path, []byte(multiEventICS), 0o644))
+
+	acc := calendar.Account{ID: "local:ro", Kind: calendar.AccountLocal, Settings: map[string]any{local.SettingReadOnly: true}}
+	p, err := local.New(acc, root)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	cals, err := p.ListCalendars(ctx)
+	require.NoError(t, err)
+	require.Len(t, cals, 1)
+	require.True(t, cals[0].ReadOnly)
+	cal := cals[0]
+
+	_, err = p.CreateEvent(ctx, cal, newTestEvent("new"))
+	require.Error(t, err)
+	_, err = p.UpdateEvent(ctx, cal, &calendar.Event{UID: "multi-1@dankcal", Summary: "changed"})
+	require.Error(t, err)
+	require.Error(t, p.DeleteEvent(ctx, cal, calendar.Event{UID: "multi-1@dankcal"}))
+	_, err = p.CreateTask(ctx, cal, &calendar.Task{Summary: "t"})
+	require.Error(t, err)
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, multiEventICS, string(got))
+}

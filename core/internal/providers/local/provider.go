@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,8 +12,20 @@ import (
 )
 
 type Provider struct {
-	account calendar.Account
-	root    string
+	account  calendar.Account
+	root     string
+	readOnly bool
+}
+
+// SettingReadOnly marks a local account whose files are owned by another tool
+// (e.g. a vdirsyncer mirror): calendars are read-only and nothing is written.
+const SettingReadOnly = "readOnly"
+
+var errReadOnly = errors.New("local account is read-only")
+
+func ReadOnly(settings map[string]any) bool {
+	ro, _ := settings[SettingReadOnly].(bool)
+	return ro
 }
 
 func New(account calendar.Account, root string) (*Provider, error) {
@@ -31,7 +44,7 @@ func New(account calendar.Account, root string) (*Provider, error) {
 	case !info.IsDir():
 		return nil, fmt.Errorf("local root %q is not a directory", abs)
 	}
-	return &Provider{account: account, root: abs}, nil
+	return &Provider{account: account, root: abs, readOnly: ReadOnly(account.Settings)}, nil
 }
 
 func (p *Provider) Kind() calendar.AccountKind { return calendar.AccountLocal }
@@ -88,6 +101,7 @@ func (p *Provider) directoryCalendar(name string) calendar.Calendar {
 		RemoteID:            "dir:" + name,
 		Name:                name,
 		SupportedComponents: localComponents,
+		ReadOnly:            p.readOnly,
 	}
 }
 
@@ -97,6 +111,7 @@ func (p *Provider) fileCalendar(name string) calendar.Calendar {
 		RemoteID:            "file:" + name,
 		Name:                strings.TrimSuffix(name, filepath.Ext(name)),
 		SupportedComponents: localComponents,
+		ReadOnly:            p.readOnly,
 	}
 }
 

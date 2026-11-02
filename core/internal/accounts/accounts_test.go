@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -256,4 +257,25 @@ func (s *AccountsSuite) TestReconcileExternalTracksManifest() {
 func (s *AccountsSuite) TestReconcileExternalRejectsBadNames() {
 	err := accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{{Name: "bad/name", Command: []string{"x"}}})
 	s.Error(err)
+}
+
+func (s *AccountsSuite) TestAddLocalReadOnlySkipsSeedAndUpdatesFlag() {
+	root := s.T().TempDir()
+	res, err := accounts.AddLocal(s.ctx, s.repo, accounts.LocalInput{Root: root, ReadOnly: true})
+	s.Require().NoError(err)
+	entries, err := os.ReadDir(root)
+	s.Require().NoError(err)
+	s.Empty(entries, "a read-only root is never seeded")
+
+	_, err = accounts.AddLocal(s.ctx, s.repo, accounts.LocalInput{Root: root})
+	s.Require().NoError(err)
+	acc, err := s.repo.GetAccount(s.ctx, res.AccountID)
+	s.Require().NoError(err)
+	s.Nil(acc.Settings["readOnly"])
+
+	_, err = accounts.AddLocal(s.ctx, s.repo, accounts.LocalInput{Root: root, ReadOnly: true})
+	s.Require().NoError(err)
+	acc, err = s.repo.GetAccount(s.ctx, res.AccountID)
+	s.Require().NoError(err)
+	s.Equal(true, acc.Settings["readOnly"])
 }

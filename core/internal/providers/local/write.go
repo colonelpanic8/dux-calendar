@@ -26,6 +26,9 @@ var filenameSanitizer = strings.NewReplacer(
 )
 
 func (p *Provider) CreateEvent(ctx context.Context, cal calendar.Calendar, ev *calendar.Event) (*calendar.Event, error) {
+	if p.readOnly {
+		return nil, errReadOnly
+	}
 	source, err := p.calendarPath(cal)
 	if err != nil {
 		return nil, err
@@ -53,6 +56,9 @@ func (p *Provider) ImportEvent(ctx context.Context, cal calendar.Calendar, ev *c
 }
 
 func (p *Provider) UpdateEvent(ctx context.Context, cal calendar.Calendar, ev *calendar.Event) (*calendar.Event, error) {
+	if p.readOnly {
+		return nil, errReadOnly
+	}
 	if ev.UID == "" {
 		return nil, fmt.Errorf("event missing UID")
 	}
@@ -83,6 +89,9 @@ func (p *Provider) UpdateEvent(ctx context.Context, cal calendar.Calendar, ev *c
 }
 
 func (p *Provider) DeleteEvent(ctx context.Context, cal calendar.Calendar, ev calendar.Event) error {
+	if p.readOnly {
+		return errReadOnly
+	}
 	if ev.UID == "" {
 		return fmt.Errorf("event missing UID")
 	}

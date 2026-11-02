@@ -30,6 +30,10 @@ func handleCalendarCreate(ctx context.Context, w *ConnWriter, req Request, deps 
 		w.RespondError(req.ID, "only local accounts support creating calendars")
 		return
 	}
+	if local.ReadOnly(acc.Settings) {
+		w.RespondError(req.ID, "local account is read-only")
+		return
+	}
 	root, _ := acc.Settings["root"].(string)
 	if root == "" {
 		w.RespondError(req.ID, "local account is missing its directory")
