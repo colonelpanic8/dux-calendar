@@ -254,9 +254,20 @@ func (s *AccountsSuite) TestReconcileExternalTracksManifest() {
 	s.NoError(err, "accounts added by hand are not managed")
 }
 
-func (s *AccountsSuite) TestReconcileExternalRejectsBadNames() {
-	err := accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{{Name: "bad/name", Command: []string{"x"}}})
-	s.Error(err)
+func (s *AccountsSuite) TestReconcileExternalInvalidManifestKeepsAccounts() {
+	org := accounts.ExternalInput{Name: "org", Command: []string{"/bin/org"}}
+	s.Require().NoError(accounts.ReconcileExternal(s.ctx, s.repo, []accounts.ExternalInput{org}))
+
+	for _, bad := range [][]accounts.ExternalInput{
+		{{Name: "org"}},
+		{{Name: "bad/name", Command: []string{"x"}}},
+		{org, org},
+	} {
+		s.Error(accounts.ReconcileExternal(s.ctx, s.repo, bad))
+		acc, err := s.repo.GetAccount(s.ctx, "external:org")
+		s.Require().NoError(err, "an invalid manifest must not remove existing accounts")
+		s.Equal([]any{"/bin/org"}, acc.Settings["command"])
+	}
 }
 
 func (s *AccountsSuite) TestAddLocalReadOnlySkipsSeedAndUpdatesFlag() {

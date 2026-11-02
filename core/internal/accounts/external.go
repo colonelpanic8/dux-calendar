@@ -132,22 +132,35 @@ func sameSettings(a, b map[string]any) bool {
 
 // ReconcileExternal makes the managed external accounts match specs exactly:
 // declared accounts are created or updated, and previously managed accounts
-// that are no longer declared are removed with their synced data.
+// that are no longer declared are removed with their synced data. An invalid
+// manifest changes nothing, and nothing is removed unless every declared
+// account was applied, so a bad entry can never delete an account's data.
 func ReconcileExternal(ctx context.Context, r *repo.Repo, specs []ExternalInput) error {
 	declared := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		if err := spec.validate(); err != nil {
+			return fmt.Errorf("external accounts manifest: %w", err)
+		}
+		id := ExternalAccountID(spec.Name)
+		if declared[id] {
+			return fmt.Errorf("external accounts manifest: duplicate account name %q", spec.Name)
+		}
+		declared[id] = true
+	}
+
 	var errs []error
 	for _, spec := range specs {
-		res, err := upsertExternal(ctx, r, spec, true)
-		if err != nil {
+		if _, err := upsertExternal(ctx, r, spec, true); err != nil {
 			errs = append(errs, err)
-			continue
 		}
-		declared[res.AccountID] = true
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	existing, err := r.ListAccountsByKind(ctx, account.KindExternal)
 	if err != nil {
-		return errors.Join(append(errs, err)...)
+		return err
 	}
 	for _, acc := range existing {
 		if managed, _ := acc.Settings[settingManaged].(bool); !managed || declared[acc.ID] {
