@@ -97,6 +97,10 @@ Payloads use dcal's own JSON shapes for calendars, events and tasks (see
   capability has `write: true`.
 - Write results are stored as returned, so return the item as the source now
   has it (for example, a repeating task that moved to its next date).
+- dcal stores each item's `etag` from sync and write results and sends it
+  back with updates and deletes. Providers can use it to detect that the
+  source changed since dcal last saw the item and fail the write instead of
+  overwriting that change.
 - dcal does not retry failed writes. A provider that cannot tell whether a
   write landed should return an error; the next sync shows the real state.
 
